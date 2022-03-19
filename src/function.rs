@@ -1,4 +1,4 @@
-use crate::utils::{self, Check};
+use crate::utils::{check_option, Check, CheckResult};
 use proc_macro2::TokenStream;
 use quote::ToTokens;
 use std::collections::HashSet;
@@ -12,22 +12,22 @@ pub trait HasFn {
         AssertFn::new(self)
     }
 
-    fn has_name(&self, name: &str) -> bool;
-    fn has_vis(&self, vis: &Visibility) -> bool;
-    fn has_attrs(&self, attrs: &[String]) -> bool;
-    fn has_block(&self, block: &TokenStream) -> bool;
+    fn has_name(&self, name: &str) -> CheckResult;
+    fn has_vis(&self, vis: &Visibility) -> CheckResult;
+    fn has_attrs(&self, attrs: &[String]) -> CheckResult;
+    fn has_block(&self, block: &TokenStream) -> CheckResult;
 }
 
 impl HasFn for ItemFn {
-    fn has_name(&self, name: &str) -> bool {
-        self.sig.ident == name
+    fn has_name(&self, name: &str) -> CheckResult {
+        CheckResult::compare(name, &self.sig.ident)
     }
 
-    fn has_vis(&self, vis: &Visibility) -> bool {
-        &self.vis == vis
+    fn has_vis(&self, vis: &Visibility) -> CheckResult {
+        CheckResult::compare(vis, &self.vis)
     }
 
-    fn has_attrs(&self, attrs: &[String]) -> bool {
+    fn has_attrs(&self, attrs: &[String]) -> CheckResult {
         let self_attrs = self
             .attrs
             .iter()
@@ -38,21 +38,21 @@ impl HasFn for ItemFn {
                     .fold(String::from(""), |acc, s| acc + "::" + &s.ident.to_string())
             })
             .collect::<HashSet<_>>();
-        attrs.iter().all(|attr| self_attrs.contains(attr))
+        CheckResult::contains(self_attrs, attrs)
     }
 
-    fn has_block(&self, block: &TokenStream) -> bool {
-        self.block.to_token_stream().to_string() == block.to_string()
+    fn has_block(&self, block: &TokenStream) -> CheckResult {
+        CheckResult::compare(block.to_string(), self.block.to_token_stream().to_string())
     }
 }
 
 macro_rules! hasfn_item {
     ($v:ident, $t: ty) => {
         paste::paste! {
-            fn [<has_ $v>](&self, $v: $t) -> bool {
+            fn [<has_ $v>](&self, $v: $t) -> CheckResult {
                 match self {
                     Item::Fn(func) => func.[<has_ $v>]($v),
-                    _ => false,
+                    _ => CheckResult::missing(stringify!($v)),
                 }
             }
         }
@@ -69,8 +69,8 @@ impl HasFn for Item {
 macro_rules! hasfn_vec {
     ($v: ident, $t: ty) => {
         paste::paste! {
-            fn [<has_ $v>](&self, $v: $t) -> bool {
-                self.iter().any(|f| f.[<has_ $v>](&$v))
+            fn [<has_ $v>](&self, $v: $t) -> CheckResult {
+                CheckResult::any(self.iter().map(|f| f.[<has_ $v>](&$v)))
             }
         }
     };
@@ -135,12 +135,65 @@ impl<'s, T> Check for AssertFn<'s, T>
 where
     T: HasFn,
 {
-    fn check(self) -> bool {
-        utils::option_check!(self, name);
-        utils::option_check!(self, vis);
-        utils::vec_check!(self, attrs);
-        utils::option_check!(self, block);
+    fn check(self) -> CheckResult {
+        check_option!(self, name)
+            + check_option!(self, vis)
+            + check_option!(self, block)
+            + self.t.has_attrs(&self.attrs)
+    }
+}
 
-        true
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::error;
+
+    type TestError = Box<dyn error::Error>;
+
+    #[test]
+    fn test_itemfn() -> Result<(), TestError> {
+        let func: syn::ItemFn = syn::parse_str(r#"fn main() { println!("Hello, world!"); }"#)?;
+        let block = quote::quote! { {
+            println!("Hello, world!");
+        } };
+
+        let results = func.has_fn().with_name("main").with_block(block).check();
+        dbg!(&results);
+        assert!(results.as_bool());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_item() -> Result<(), TestError> {
+        let func: syn::Item = syn::parse_str(r#"fn main() { println!("Hello, world!"); }"#)?;
+        let block = quote::quote! { {
+            println!("Hello, world!");
+        } };
+
+        let results = func.has_fn().with_name("main").with_block(block).check();
+        dbg!(&results);
+        assert!(results.as_bool());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_file() -> Result<(), TestError> {
+        let func: syn::File = syn::parse_str(r#"fn main() { println!("Hello, world!"); }"#)?;
+        let block = quote::quote! { {
+            println!("Hello, world!");
+        } };
+
+        let results = func
+            .items
+            .has_fn()
+            .with_name("main")
+            .with_block(block)
+            .check();
+        dbg!(&results);
+        assert!(results.as_bool());
+
+        Ok(())
     }
 }
