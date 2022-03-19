@@ -4,6 +4,7 @@ pub trait Check {
     fn check(self) -> CheckResult;
 }
 
+#[must_use]
 #[derive(Debug)]
 pub enum CheckResult {
     Success,
@@ -70,9 +71,9 @@ impl CheckResult {
     }
 
     pub fn as_bool(&self) -> bool {
-        match self {
-            &CheckResult::Success => true,
-            &CheckResult::Failure(_) => false,
+        match *self {
+            CheckResult::Success => true,
+            CheckResult::Failure(_) => false,
         }
     }
 }
@@ -96,7 +97,7 @@ impl From<CheckResult> for Vec<String> {
 
 impl From<Vec<String>> for CheckResult {
     fn from(failures: Vec<String>) -> Self {
-        if failures.len() == 0 {
+        if failures.is_empty() {
             Self::Success
         } else {
             Self::Failure(failures)

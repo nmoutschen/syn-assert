@@ -35,7 +35,9 @@ impl HasFn for ItemFn {
                 a.path
                     .segments
                     .iter()
-                    .fold(String::from(""), |acc, s| acc + "::" + &s.ident.to_string())
+                    .map(|s| s.ident.to_string())
+                    .collect::<Vec<_>>()
+                    .join("::")
             })
             .collect::<HashSet<_>>();
         CheckResult::contains(self_attrs, attrs)
@@ -152,7 +154,11 @@ mod tests {
 
     #[test]
     fn test_itemfn() -> Result<(), TestError> {
-        let func: syn::ItemFn = syn::parse_str(r#"fn main() { println!("Hello, world!"); }"#)?;
+        let func: syn::ItemFn = syn::parse_str(
+            r#"
+            fn main() { println!("Hello, world!"); }
+        "#,
+        )?;
         let block = quote::quote! { {
             println!("Hello, world!");
         } };
@@ -166,7 +172,11 @@ mod tests {
 
     #[test]
     fn test_item() -> Result<(), TestError> {
-        let func: syn::Item = syn::parse_str(r#"fn main() { println!("Hello, world!"); }"#)?;
+        let func: syn::Item = syn::parse_str(
+            r#"
+            fn main() { println!("Hello, world!"); }
+        "#,
+        )?;
         let block = quote::quote! { {
             println!("Hello, world!");
         } };
@@ -180,7 +190,11 @@ mod tests {
 
     #[test]
     fn test_file() -> Result<(), TestError> {
-        let func: syn::File = syn::parse_str(r#"fn main() { println!("Hello, world!"); }"#)?;
+        let func: syn::File = syn::parse_str(
+            r#"
+            fn main() { println!("Hello, world!"); }
+        "#,
+        )?;
         let block = quote::quote! { {
             println!("Hello, world!");
         } };
@@ -193,6 +207,100 @@ mod tests {
             .check();
         dbg!(&results);
         assert!(results.as_bool());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_name() -> Result<(), TestError> {
+        let func: syn::ItemFn = syn::parse_str(
+            r#"
+            fn main() { println!("Hello, world!"); }
+        "#,
+        )?;
+
+        let results = func.has_fn().with_name("main").check();
+        dbg!(&results);
+        assert!(results.as_bool());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_name_fail() -> Result<(), TestError> {
+        let func: syn::ItemFn = syn::parse_str(
+            r#"
+            fn main() { println!("Hello, world!"); }
+        "#,
+        )?;
+
+        let results = func.has_fn().with_name("not_main").check();
+        dbg!(&results);
+        assert!(!results.as_bool());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_attrs_1() -> Result<(), TestError> {
+        let func: syn::ItemFn = syn::parse_str(
+            r#"
+            #[my_attr]
+            fn main() { println!("Hello, world!"); }
+        "#,
+        )?;
+
+        let results = func
+            .has_fn()
+            .with_attrs(vec!["my_attr".to_string()])
+            .check();
+        dbg!(&results);
+        assert!(results.as_bool());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_attrs_2() -> Result<(), TestError> {
+        let func: syn::ItemFn = syn::parse_str(
+            r#"
+            #[my_attr]
+            #[a_crate::my_other_attr]
+            fn main() { println!("Hello, world!"); }
+            "#,
+        )?;
+
+        let results = func
+            .has_fn()
+            .with_attrs(vec![
+                "my_attr".to_string(),
+                "a_crate::my_other_attr".to_string(),
+            ])
+            .check();
+        dbg!(&results);
+        assert!(results.as_bool());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_attrs_2_fail() -> Result<(), TestError> {
+        let func: syn::ItemFn = syn::parse_str(
+            r#"
+            #[my_attr]
+            fn main() { println!("Hello, world!"); }
+            "#,
+        )?;
+
+        let results = func
+            .has_fn()
+            .with_attrs(vec![
+                "my_attr".to_string(),
+                "a_crate::my_other_attr".to_string(),
+            ])
+            .check();
+        dbg!(&results);
+        assert!(!results.as_bool());
 
         Ok(())
     }
